@@ -1,11 +1,15 @@
+import os
+import sys
+import subprocess
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import logging
 from typing import Optional
 from dataclasses import dataclass
 from contextlib import contextmanager
 import traceback
-import os
-import subprocess
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
 
 @dataclass
 class RegistraduriaData:
@@ -13,6 +17,34 @@ class RegistraduriaData:
     fecha_consulta: Optional[str] = None
     documento: Optional[str] = None
     estado: Optional[str] = None
+
+def install_browser():
+    """Install browser on startup"""
+    logger = logging.getLogger('browser_install')
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+
+    try:
+        # Set environment variables
+        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/opt/render/project/.playwright'
+        os.environ['PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD'] = '0'
+        os.environ['PLAYWRIGHT_SKIP_VALIDATION'] = '1'
+
+        logger.info("Installing playwright browsers...")
+        subprocess.run([sys.executable, '-m', 'playwright', 'install', 'chromium'], 
+                      check=True, capture_output=True)
+        
+        # Set permissions
+        browser_path = os.environ['PLAYWRIGHT_BROWSERS_PATH']
+        subprocess.run(['chmod', '-R', '777', browser_path], check=True)
+        
+        logger.info("Browser installation completed")
+        return True
+    except Exception as e:
+        logger.error(f"Browser installation failed: {e}")
+        return False
 
 class RegistraduriaScraper:
     URL = 'https://www.fcm.org.co/simit/#/home-public'
@@ -26,40 +58,9 @@ class RegistraduriaScraper:
         self.logger = self._setup_logger()
         self.headless = headless
         
-        # Set browser path and ensure it exists
-        self.browser_path = os.getenv('PLAYWRIGHT_BROWSERS_PATH', 
-                                    os.path.expanduser('~/.cache/ms-playwright'))
-        os.makedirs(self.browser_path, exist_ok=True)
-        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = self.browser_path
-        
-        self._ensure_browser_installed()
-        self.logger.info(f"PLAYWRIGHT_BROWSERS_PATH set to {self.browser_path}")
-
-    def _ensure_browser_installed(self):
-        """Ensure browser is installed before attempting to use it"""
-        try:
-            # Check if browser is already installed
-            with sync_playwright() as p:
-                try:
-                    p.chromium.executable_path
-                    return  # Browser exists
-                except Exception:
-                    self.logger.info("Browser not found, attempting installation")
-            
-            # Set environment variables for installation
-            os.environ['PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD'] = '0'
-            os.environ['PLAYWRIGHT_SKIP_VALIDATION'] = '1'
-            
-            # Attempt browser installation
-            subprocess.run(['playwright', 'install', 'chromium', '--with-deps'], 
-                         check=True, capture_output=True)
-            
-            # Ensure proper permissions
-            subprocess.run(['chmod', '-R', '777', self.browser_path], 
-                         check=True, capture_output=True)
-        except Exception as e:
-            self.logger.error(f"Failed to install browser: {e}")
-            raise
+        # Use the environment variable set during installation
+        self.browser_path = os.environ['PLAYWRIGHT_BROWSERS_PATH']
+        self.logger.info(f"Using browser path: {self.browser_path}")
 
     @staticmethod
     def _setup_logger() -> logging.Logger:
@@ -101,9 +102,7 @@ class RegistraduriaScraper:
                               "Chrome/98.0.4758.102 Safari/537.36"
                 )
                 page = context.new_page()
-                self.logger.info("Browser context and page created successfully")
                 yield page
-                
             except Exception as e:
                 self.logger.error(f"Error launching browser: {e}")
                 self.logger.error(traceback.format_exc())
@@ -112,19 +111,12 @@ class RegistraduriaScraper:
                 if browser:
                     try:
                         browser.close()
-                        self.logger.info("Browser closed successfully")
                     except Exception as e:
                         self.logger.error(f"Error closing browser: {e}")
 
     def scrape(self, nuip: str) -> Optional[RegistraduriaData]:
         """
         Scrape data for a given NUIP number.
-        
-        Args:
-            nuip (str): The NUIP number to search for
-            
-        Returns:
-            Optional[RegistraduriaData]: The scraped data or None if unsuccessful
         """
         try:
             with self._get_browser() as page:
@@ -136,7 +128,7 @@ class RegistraduriaScraper:
                 self.logger.info(f"Navigating to {self.URL}")
                 page.goto(self.URL, wait_until="networkidle")
 
-                # Wait for page to be fully loaded
+                # Wait for page load
                 page.wait_for_load_state("domcontentloaded")
                 page.wait_for_load_state("networkidle")
 
@@ -144,60 +136,71 @@ class RegistraduriaScraper:
                 try:
                     if page.is_visible(self.BANNER_CLOSE_SELECTOR, timeout=5000):
                         page.click(self.BANNER_CLOSE_SELECTOR)
-                        self.logger.info("Banner closed")
                 except PlaywrightTimeoutError:
                     self.logger.info("Banner not found or already closed")
                 except Exception as e:
                     self.logger.warning(f"Error closing banner: {e}")
 
-                # Enter NUIP and perform search
+                # Enter NUIP and search
                 try:
-                    self.logger.info(f"Waiting for input field {self.INPUT_SELECTOR}")
                     page.wait_for_selector(self.INPUT_SELECTOR, state="visible")
                     page.fill(self.INPUT_SELECTOR, nuip)
-                    self.logger.info(f"NUIP entered: {nuip}")
                     
                     page.wait_for_selector(self.BUTTON_SELECTOR, state="visible")
                     page.click(self.BUTTON_SELECTOR)
-                    self.logger.info("Search button clicked")
                 except Exception as e:
-                    self.logger.error(f"Error entering NUIP or clicking button: {e}")
+                    self.logger.error(f"Error with form interaction: {e}")
                     return None
 
-                # Wait for and extract results
+                # Extract results
                 estado_text = None
-                
-                # Try both XPaths
                 for xpath, description in [
                     (self.RESULTADOS_XPATH, "primary"),
                     (self.RESULTADOS_XPATH_ALTERNATIVE, "alternative")
                 ]:
                     try:
-                        self.logger.info(f"Attempting to extract results with {description} XPath")
                         page.wait_for_selector(f'xpath={xpath}', timeout=10000)
                         elemento = page.query_selector(f'xpath={xpath}')
                         if elemento:
                             estado_text = elemento.inner_text().strip()
-                            self.logger.info(f"Results found with {description} XPath: {estado_text}")
                             break
-                    except PlaywrightTimeoutError:
-                        self.logger.info(f"No results found with {description} XPath")
-                    except Exception as e:
-                        self.logger.error(f"Error extracting with {description} XPath: {e}")
+                    except Exception:
+                        continue
 
-                if estado_text:
-                    return RegistraduriaData(nuip=nuip, estado=estado_text)
-                else:
-                    self.logger.warning("No information found in any XPath")
-                    return None
+                return RegistraduriaData(nuip=nuip, estado=estado_text) if estado_text else None
 
         except Exception as e:
-            self.logger.error(f"General error in scraping process: {e}")
+            self.logger.error(f"Scraping error: {e}")
             self.logger.error(traceback.format_exc())
             return None
 
-# Example usage
-if __name__ == "__main__":
+# Flask routes
+@app.route('/scrape', methods=['POST'])
+def scrape():
+    nuip = request.json.get('nuip')
+    if not nuip:
+        return jsonify({'error': 'NUIP is required'}), 400
+    
     scraper = RegistraduriaScraper(headless=True)
-    result = scraper.scrape("1234567890")
-    print(result)
+    result = scraper.scrape(nuip)
+    
+    if result:
+        return jsonify({
+            'nuip': result.nuip,
+            'estado': result.estado
+        })
+    return jsonify({'error': 'No data found'}), 404
+
+@app.route('/')
+def home():
+    return "Simit Scraper API is running"
+
+if __name__ == '__main__':
+    # Install browser on startup
+    if not install_browser():
+        print("Failed to install browser. Exiting.")
+        sys.exit(1)
+        
+    # Start Flask server
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)

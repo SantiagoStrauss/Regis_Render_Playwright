@@ -4,43 +4,30 @@ set -e
 # Update pip
 pip install --upgrade pip
 
-# Set environment variables for Playwright
+# Install Flask and Playwright
+pip install flask playwright==1.49.1
+
+# Set environment variables
 export PLAYWRIGHT_BROWSERS_PATH="/opt/render/project/.playwright"
 export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
 export PLAYWRIGHT_SKIP_VALIDATION=1
-
-# Install Playwright with specific version
-pip install playwright==1.49.1
 
 # Create browser directory with proper permissions
 mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
 chmod -R 777 "$PLAYWRIGHT_BROWSERS_PATH"
 
-# Attempt browser installation with different strategies
-echo "Installing browsers..."
-playwright install --with-deps chromium || {
-    echo "First installation attempt failed, trying alternative method..."
-    
-    # Try installing without system dependencies
+# Install browsers
+python -m playwright install chromium --with-deps || {
+    echo "Standard installation failed, trying alternative..."
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0 \
     PLAYWRIGHT_SKIP_VALIDATION=1 \
-    playwright install chromium || {
-        echo "Second installation attempt failed, trying minimal installation..."
-        
-        # Try installing only the browser binary
-        playwright install chromium --with-deps
-    }
+    python -m playwright install chromium
 }
 
 # Verify installation
-echo "Verifying Playwright installation..."
-playwright --version
+python -m playwright --version
 
-# List installed browsers and permissions
-echo "Checking browser installation directory..."
+# List installed browsers
 ls -la "$PLAYWRIGHT_BROWSERS_PATH"
-
-# Ensure browser binaries are executable
-find "$PLAYWRIGHT_BROWSERS_PATH" -type f -exec chmod +x {} \;
 
 echo "Build script completed"
