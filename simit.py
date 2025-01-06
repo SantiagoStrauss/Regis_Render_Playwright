@@ -49,7 +49,17 @@ class RegistraduriaScraper:
             try:
                 browser = p.chromium.launch(
                     headless=self.headless, 
-                    args=["--window-size=1920,1080"],
+                    args=[
+                        "--window-size=1280,720",
+                        "--disable-gpu",
+                        "--disable-dev-shm-usage",
+                        "--disable-extensions",
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-images",
+                        "--disable-plugins",
+                        "--mute-audio"
+                    ],
                     slow_mo=50
                 )
                 context = browser.new_context(
