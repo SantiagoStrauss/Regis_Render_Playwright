@@ -72,7 +72,7 @@ class RegistraduriaScraper:
     def scrape(self, nuip: str) -> Optional[RegistraduriaData]:
         try:
             with self._get_browser() as page:
-                page.goto(self.URL)
+                page.goto(self.URL, timeout=60000, wait_until='networkidle')
                 self.logger.info(f"Navegando a {self.URL}")
 
                 # Cerrar banner si está presente
