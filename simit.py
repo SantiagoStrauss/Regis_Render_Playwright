@@ -41,13 +41,9 @@ class RegistraduriaScraper:
         with sync_playwright() as p:
             try:
                 browser = p.chromium.launch(
+                    channel="chrome",
                     headless=self.headless,
-                    args=[
-                        "--disable-dev-shm-usage",
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--window-size=1920,1080"
-                    ],
+                    args=["--window-size=1920,1080"],
                     slow_mo=50
                 )
                 context = browser.new_context(
@@ -63,9 +59,8 @@ class RegistraduriaScraper:
                 self.logger.error(traceback.format_exc())
                 raise
             finally:
-                if 'browser' in locals():
-                    browser.close()
-                    self.logger.info("Browser cerrado")
+                browser.close()
+                self.logger.info("Browser cerrado")
 
     def scrape(self, nuip: str) -> Optional[RegistraduriaData]:
         try:
