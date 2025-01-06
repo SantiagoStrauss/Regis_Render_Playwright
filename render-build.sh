@@ -8,7 +8,7 @@ pip install --upgrade pip
 pip install --upgrade "playwright>=1.25.0"
 
 # Instalar navegadores y dependencias de Playwright
-playwright install --with-deps
+playwright install
 
 # Verificar la instalación de Playwright
 if ! playwright --version > /dev/null 2>&1; then
