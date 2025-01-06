@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# Actualizar pip
-pip install --upgrade pip
-
-# Instalar dependencias del sistema necesarias para Playwright
+# Update package lists and install system dependencies
 apt-get update && apt-get install -y \
     libgstgl-1.0-0 \
     libgstcodecparsers-1.0-0 \
@@ -12,21 +9,47 @@ apt-get update && apt-get install -y \
     libenchant-2-2 \
     libsecret-1-0 \
     libmanette-0.2-0 \
-    libgles2
+    libgles2 \
+    # Additional dependencies for Chromium
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2
 
-# Configurar la ruta de los navegadores de Playwright
-export PLAYWRIGHT_BROWSERS_PATH=0
+# Update pip
+pip install --upgrade pip
 
-# Instalar Playwright
-pip install --upgrade "playwright>=1.25.0"
+# Set Playwright browser path
+export PLAYWRIGHT_BROWSERS_PATH="/opt/render/.cache/ms-playwright"
 
-# Instalar navegadores y dependencias de Playwright
-playwright install
+# Install Playwright with specific version
+pip install playwright==1.40.0
 
-# Verificar la instalación de Playwright
-if ! playwright --version > /dev/null 2>&1; then
-    echo "La instalación de Playwright falló"
+# Force browser download with specific parameters
+PLAYWRIGHT_BROWSERS_PATH="/opt/render/.cache/ms-playwright" playwright install chromium --with-deps
+
+# Verify Playwright installation
+if playwright --version; then
+    echo "Playwright installation verified successfully"
+else
+    echo "Playwright installation verification failed"
     exit 1
 fi
 
-echo "Instalación de Playwright completada exitosamente"
+# Verify browser installation
+if [ -d "$PLAYWRIGHT_BROWSERS_PATH" ]; then
+    echo "Browser directory exists at $PLAYWRIGHT_BROWSERS_PATH"
+    ls -la "$PLAYWRIGHT_BROWSERS_PATH"
+else
+    echo "Browser directory not found at $PLAYWRIGHT_BROWSERS_PATH"
+    exit 1
+fi
