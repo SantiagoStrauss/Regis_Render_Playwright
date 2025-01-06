@@ -41,8 +41,7 @@ class RegistraduriaScraper:
         with sync_playwright() as p:
             try:
                 browser = p.chromium.launch(
-                    channel="chrome",
-                    headless=self.headless,
+                    headless=self.headless, 
                     args=["--window-size=1920,1080"],
                     slow_mo=50
                 )
