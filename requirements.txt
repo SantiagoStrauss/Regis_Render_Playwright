@@ -1,5 +1,4 @@
-selenium
-webdriver-manager
+playwright>=1.25.0
 dataclasses
 flask
 gunicorn

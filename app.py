@@ -1,20 +1,28 @@
-from flask import Flask, request, jsonify
-from cemail import CompromisedEmailScraper, CompromisedData
+from flask import Flask, request, jsonify, Response
+from simit import RegistraduriaScraper, RegistraduriaData
+import json
 
 app = Flask(__name__)
+app.config['JSON_AS_ASCII'] = False  # Handle non-ASCII characters
 
 @app.route('/scrape', methods=['POST'])
 def scrape():
     data = request.json
-    email = data.get('email')
-    if not email:
-        return jsonify({'error': 'Email is required'}), 400
+    nuip = data.get('nuip')
+    headless = data.get('headless', True)  # Cambiado el valor predeterminado a False para depuración
 
-    scraper = CompromisedEmailScraper(headless=True)
-    target_url = "https://whatismyipaddress.com/breach-check"
-    scraped_data = scraper.scrape(target_url, email)
+    if not nuip:
+        return jsonify({'error': 'NUIP is required'}), 400
 
-    return jsonify([data.__dict__ for data in scraped_data])
+    scraper = RegistraduriaScraper(headless=headless)
+    scraped_data = scraper.scrape(nuip)
+
+    if not scraped_data:
+        return jsonify({'error': 'No data found for the provided NUIP'}), 404
+
+    response_data = scraped_data.__dict__
+    json_response = json.dumps(response_data, ensure_ascii=False)
+    return Response(json_response, mimetype='application/json'), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
