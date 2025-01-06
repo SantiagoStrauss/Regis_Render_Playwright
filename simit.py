@@ -46,22 +46,42 @@ class RegistraduriaScraper:
         browser = None
         with sync_playwright() as p:
             try:
-                browser = p.chromium.launch(
-                    headless=self.headless,
-                    args=[
-                        "--disable-dev-shm-usage",
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--single-process",
-                        "--no-zygote"
-                    ]
-                )
+                # Try different browser types in case chromium fails
+                browser_types = [p.chromium, p.firefox, p.webkit]
+                last_error = None
+                
+                for browser_type in browser_types:
+                    try:
+                        browser = browser_type.launch(
+                            headless=self.headless,
+                            args=[
+                                "--no-sandbox",
+                                "--disable-dev-shm-usage",
+                                "--disable-gpu",
+                                "--disable-software-rasterizer",
+                                "--disable-setuid-sandbox",
+                                "--no-zygote",
+                                "--single-process",
+                            ]
+                        )
+                        self.logger.info(f"Successfully launched browser using {browser_type}")
+                        break
+                    except Exception as e:
+                        last_error = e
+                        self.logger.warning(f"Failed to launch {browser_type}: {e}")
+                        continue
+                
+                if browser is None:
+                    raise Exception(f"Failed to launch any browser. Last error: {last_error}")
+
                 context = browser.new_context(
                     viewport={'width': 1920, 'height': 1080},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36"
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/98.0.4758.102 Safari/537.36"
                 )
                 page = context.new_page()
-                self.logger.info("Browser launched successfully")
+                self.logger.info("Browser context and page created successfully")
                 yield page
             except Exception as e:
                 self.logger.error(f"Error al iniciar el navegador: {e}")
