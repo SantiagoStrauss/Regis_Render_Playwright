@@ -1,33 +1,19 @@
 #!/usr/bin/env bash
 set -e
 
-# Update pip
+# Actualizar pip
 pip install --upgrade pip
 
-# Install Flask and Playwright
-pip install flask playwright==1.49.1
+# Instalar Playwright
+pip install --upgrade "playwright>=1.25.0"
 
-# Set environment variables
-export PLAYWRIGHT_BROWSERS_PATH="/opt/render/project/.playwright"
-export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
-export PLAYWRIGHT_SKIP_VALIDATION=1
+# Instalar navegadores y dependencias de Playwright
+playwright install --with-deps
 
-# Create browser directory with proper permissions
-mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
-chmod -R 777 "$PLAYWRIGHT_BROWSERS_PATH"
+# Verificar la instalación de Playwright
+if ! playwright --version > /dev/null 2>&1; then
+    echo "La instalación de Playwright falló"
+    exit 1
+fi
 
-# Install browsers
-python -m playwright install chromium --with-deps || {
-    echo "Standard installation failed, trying alternative..."
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0 \
-    PLAYWRIGHT_SKIP_VALIDATION=1 \
-    python -m playwright install chromium
-}
-
-# Verify installation
-python -m playwright --version
-
-# List installed browsers
-ls -la "$PLAYWRIGHT_BROWSERS_PATH"
-
-echo "Build script completed"
+echo "Instalación de Playwright completada exitosamente"
