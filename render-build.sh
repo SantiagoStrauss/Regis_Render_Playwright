@@ -14,6 +14,9 @@ apt-get update && apt-get install -y \
     libmanette-0.2-0 \
     libgles2
 
+# Configurar la ruta de los navegadores de Playwright
+export PLAYWRIGHT_BROWSERS_PATH=0
+
 # Instalar Playwright
 pip install --upgrade "playwright>=1.25.0"
 
