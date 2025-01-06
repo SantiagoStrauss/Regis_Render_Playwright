@@ -1,3 +1,9 @@
+# filepath: /C:/Users/david/Documents/LISTAS PYTHON/LISTAS PYTHON/simit - Playwright/simit.py
+import os
+
+# Set Playwright browsers path before importing Playwright
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "./.playwright-browsers"
+
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import logging
 from typing import Optional
