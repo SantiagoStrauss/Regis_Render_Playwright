@@ -4,6 +4,16 @@ set -e
 # Actualizar pip
 pip install --upgrade pip
 
+# Instalar dependencias del sistema necesarias para Playwright
+apt-get update && apt-get install -y \
+    libgstgl-1.0-0 \
+    libgstcodecparsers-1.0-0 \
+    libavif15 \
+    libenchant-2-2 \
+    libsecret-1-0 \
+    libmanette-0.2-0 \
+    libgles2
+
 # Instalar Playwright
 pip install --upgrade "playwright>=1.25.0"
 

@@ -4,6 +4,7 @@ from typing import Optional
 from dataclasses import dataclass
 from contextlib import contextmanager
 import traceback
+
 #funciona para ambos casos
 @dataclass
 class RegistraduriaData:
@@ -38,6 +39,7 @@ class RegistraduriaScraper:
 
     @contextmanager
     def _get_browser(self):
+        browser = None
         with sync_playwright() as p:
             try:
                 browser = p.chromium.launch(
@@ -58,8 +60,9 @@ class RegistraduriaScraper:
                 self.logger.error(traceback.format_exc())
                 raise
             finally:
-                browser.close()
-                self.logger.info("Browser cerrado")
+                if browser:
+                    browser.close()
+                    self.logger.info("Browser cerrado")
 
     def scrape(self, nuip: str) -> Optional[RegistraduriaData]:
         try:
