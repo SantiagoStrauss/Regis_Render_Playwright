@@ -25,10 +25,9 @@ class RegistraduriaScraper:
         self.logger = self._setup_logger()
         self.headless = headless
         
-        # Ensure PLAYWRIGHT_BROWSERS_PATH is set
-        if not os.getenv('PLAYWRIGHT_BROWSERS_PATH'):
-            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/opt/render/.cache/ms-playwright'
-            self.logger.info(f"Set PLAYWRIGHT_BROWSERS_PATH to {os.getenv('PLAYWRIGHT_BROWSERS_PATH')}")
+        # Set browser path to user's home directory
+        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = os.path.expanduser('~/.cache/ms-playwright')
+        self.logger.info(f"PLAYWRIGHT_BROWSERS_PATH set to {os.getenv('PLAYWRIGHT_BROWSERS_PATH')}")
 
     @staticmethod
     def _setup_logger() -> logging.Logger:
@@ -50,19 +49,16 @@ class RegistraduriaScraper:
                 browser = p.chromium.launch(
                     headless=self.headless,
                     args=[
-                        "--window-size=1920,1080",
-                        "--no-sandbox",
                         "--disable-dev-shm-usage",
-                        "--disable-gpu",
-                        "--disable-software-rasterizer"
-                    ],
-                    slow_mo=50
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--single-process",
+                        "--no-zygote"
+                    ]
                 )
                 context = browser.new_context(
                     viewport={'width': 1920, 'height': 1080},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                              "AppleWebKit/537.36 (KHTML, like Gecko) "
-                              "Chrome/98.0.4758.102 Safari/537.36"
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36"
                 )
                 page = context.new_page()
                 self.logger.info("Browser launched successfully")
@@ -83,7 +79,7 @@ class RegistraduriaScraper:
         try:
             with self._get_browser() as page:
                 # Configure timeouts
-                page.set_default_timeout(30000)  # 30 seconds
+                page.set_default_timeout(30000)
                 page.set_default_navigation_timeout(30000)
 
                 # Navigate to the page
@@ -103,7 +99,6 @@ class RegistraduriaScraper:
                     self.logger.info("No se encontró el banner o ya está cerrado.")
                 except Exception as e:
                     self.logger.warning(f"Error al cerrar el banner: {e}")
-                    # Continue execution as this is not critical
 
                 # Ingresar NUIP y realizar búsqueda
                 try:
@@ -122,28 +117,23 @@ class RegistraduriaScraper:
                 # Esperar y extraer resultados
                 estado_text = None
                 
-                # Intentar con el primer XPath
-                try:
-                    self.logger.info("Intentando extraer resultados con XPath principal")
-                    page.wait_for_selector(f'xpath={self.RESULTADOS_XPATH}', timeout=10000)
-                    elemento = page.query_selector(f'xpath={self.RESULTADOS_XPATH}')
-                    if elemento:
-                        estado_text = elemento.inner_text().strip()
-                        self.logger.info(f"Resultados encontrados con XPath principal: {estado_text}")
-                except PlaywrightTimeoutError:
-                    self.logger.info("No se encontraron resultados con XPath principal")
-                
-                # Si no se encontró con el primer XPath, intentar con el alternativo
-                if not estado_text:
+                # Try both XPaths
+                for xpath, description in [
+                    (self.RESULTADOS_XPATH, "principal"),
+                    (self.RESULTADOS_XPATH_ALTERNATIVE, "alternativo")
+                ]:
                     try:
-                        self.logger.info("Intentando extraer resultados con XPath alternativo")
-                        page.wait_for_selector(f'xpath={self.RESULTADOS_XPATH_ALTERNATIVE}', timeout=10000)
-                        elemento = page.query_selector(f'xpath={self.RESULTADOS_XPATH_ALTERNATIVE}')
+                        self.logger.info(f"Intentando extraer resultados con XPath {description}")
+                        page.wait_for_selector(f'xpath={xpath}', timeout=10000)
+                        elemento = page.query_selector(f'xpath={xpath}')
                         if elemento:
                             estado_text = elemento.inner_text().strip()
-                            self.logger.info(f"Resultados encontrados con XPath alternativo: {estado_text}")
+                            self.logger.info(f"Resultados encontrados con XPath {description}: {estado_text}")
+                            break
                     except PlaywrightTimeoutError:
-                        self.logger.warning("No se encontraron resultados con XPath alternativo")
+                        self.logger.info(f"No se encontraron resultados con XPath {description}")
+                    except Exception as e:
+                        self.logger.error(f"Error al extraer con XPath {description}: {e}")
 
                 if estado_text:
                     return RegistraduriaData(nuip=nuip, estado=estado_text)
@@ -155,9 +145,3 @@ class RegistraduriaScraper:
             self.logger.error(f"Error general en el proceso de scraping: {e}")
             self.logger.error(traceback.format_exc())
             return None
-
-    def __str__(self) -> str:
-        return f"RegistraduriaScraper(headless={self.headless})"
-
-    def __repr__(self) -> str:
-        return self.__str__()
