@@ -175,3 +175,13 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+############################################
+## File: .aws.ignore
+############################################
+# Ignore all files related to git
+.git/
+.gitignore
+
+# Ignore all files related to docker
+.dockerignore
+Dockerfile
