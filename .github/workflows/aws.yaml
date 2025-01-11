@@ -1,0 +1,14 @@
+name: Build docker image
+
+on:
+  push:
+    branches:
+      - main
+      - feature/build-docker-image # Temporary branch for testing purposes
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
