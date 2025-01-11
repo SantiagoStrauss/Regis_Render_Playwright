@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feature/build-docker-image # Temporary branch for testing purposes
 
 jobs:
   build:
