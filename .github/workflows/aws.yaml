@@ -12,3 +12,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - id: regenerate-docker-ignore
+        name: Regenerate .dockerignore based on other files
+        run: |
+          cat .gitignore > .dockerignore
+          cat .aws.ignore >> .dockerignore
