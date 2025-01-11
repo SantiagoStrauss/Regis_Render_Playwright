@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y libnss3\
 	libgbm1\
 	libdrm2\
 	libxkbcommon0\
+	libcups2\
 	libasound2
 
 FROM base AS api-builder
