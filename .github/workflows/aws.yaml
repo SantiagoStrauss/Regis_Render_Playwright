@@ -18,3 +18,8 @@ jobs:
         run: |
           cat .gitignore > .dockerignore
           cat .aws.ignore >> .dockerignore
+
+      - id: build-docker-image
+        name: Build docker image
+        run: |
+          docker build -t gs_simit .
