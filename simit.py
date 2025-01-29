@@ -9,6 +9,7 @@ import os
 
 # Constants for Chrome setup
 DEFAULT_CHROME_PATH = "/opt/render/project/.chrome/chrome-linux64/chrome-linux64/chrome"
+
 CHROME_BINARY_PATH = os.getenv('CHROME_BINARY', DEFAULT_CHROME_PATH)
 
 @dataclass
@@ -32,10 +33,10 @@ class RegistraduriaScraper:
         self.logger.info("Playwright browser launched successfully")
 
     def verify_chrome_binary(self) -> None:
+        global CHROME_BINARY_PATH
         if not os.path.isfile(CHROME_BINARY_PATH):
             fallback_path = os.path.join(os.getcwd(), "chrome", "chrome.exe")
             if os.path.isfile(fallback_path):
-                global CHROME_BINARY_PATH
                 CHROME_BINARY_PATH = fallback_path
             else:
                 self.logger.error(f"Chrome binary not found at {CHROME_BINARY_PATH}")
@@ -96,4 +97,3 @@ class RegistraduriaScraper:
     def close(self):
         self.browser.close()
         self.playwright.stop()
-        self.logger.info("Browser closed")
