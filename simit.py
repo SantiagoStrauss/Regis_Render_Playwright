@@ -1,3 +1,9 @@
+# filepath: /C:/Users/david/Documents/LISTAS PYTHON/LISTAS PYTHON/simit - Playwright/simit.py
+import os
+
+# Set Playwright browsers path before importing Playwright
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "./.playwright-browsers"
+
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import logging
 from typing import Optional
@@ -42,11 +48,22 @@ class RegistraduriaScraper:
 
     @contextmanager
     def _get_browser(self):
+        browser = None
         with sync_playwright() as p:
             try:
                 browser = p.chromium.launch(
                     headless=self.headless, 
-                    args=["--window-size=1920,1080"],
+                    args=[
+                        "--window-size=1280,720",
+                        "--disable-gpu",
+                        "--disable-dev-shm-usage",
+                        "--disable-extensions",
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-images",
+                        "--disable-plugins",
+                        "--mute-audio"
+                    ],
                     slow_mo=50
                 )
                 context = browser.new_context(
@@ -62,13 +79,14 @@ class RegistraduriaScraper:
                 self.logger.error(traceback.format_exc())
                 raise
             finally:
-                browser.close()
-                self.logger.info("Browser cerrado")
+                if browser:
+                    browser.close()
+                    self.logger.info("Browser cerrado")
 
     def scrape(self, nuip: str) -> Optional[RegistraduriaData]:
         try:
             with self._get_browser() as page:
-                page.goto(self.URL)
+                page.goto(self.URL, timeout=600000, wait_until='networkidle')
                 self.logger.info(f"Navegando a {self.URL}")
 
                 # Ingresar NUIP
