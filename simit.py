@@ -9,7 +9,6 @@ import os
 
 # Constants for Chrome setup
 DEFAULT_CHROME_PATH = "/opt/render/project/.chrome/chrome-linux64/chrome-linux64/chrome"
-
 CHROME_BINARY_PATH = os.getenv('CHROME_BINARY', DEFAULT_CHROME_PATH)
 
 @dataclass
@@ -58,7 +57,11 @@ class RegistraduriaScraper:
     def scrape(self, documento: str) -> Optional[RegistraduriaData]:
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(executable_path=CHROME_BINARY_PATH, headless=self.headless)
+                browser = p.chromium.launch(
+                    executable_path=CHROME_BINARY_PATH,
+                    headless=self.headless,
+                    args=["--disable-dev-shm-usage", "--no-sandbox", "--disable-setuid-sandbox"]
+                )
                 self.logger.info("Playwright browser launched successfully")
                 page = browser.new_page()
                 self.logger.info(f"Navigating to {self.URL}")
@@ -98,4 +101,4 @@ class RegistraduriaScraper:
                 browser.close()
 
     def close(self):
-        pass  # No action needed since browser is managed within the scrape method
+        pass
