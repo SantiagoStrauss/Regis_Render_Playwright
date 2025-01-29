@@ -1,9 +1,3 @@
-# filepath: /C:/Users/david/Documents/LISTAS PYTHON/LISTAS PYTHON/simit - Playwright/simit.py
-import os
-
-# Set Playwright browsers path before importing Playwright
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "./.playwright-browsers"
-
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import logging
 from typing import Optional
@@ -11,6 +5,11 @@ from dataclasses import dataclass
 from contextlib import contextmanager
 import traceback
 from datetime import datetime
+import os
+
+# Constants for Chrome setup
+DEFAULT_CHROME_PATH = "/opt/render/project/.chrome/chrome-linux64/chrome-linux64/chrome"
+CHROME_BINARY_PATH = os.getenv('CHROME_BINARY', DEFAULT_CHROME_PATH)
 
 @dataclass
 class RegistraduriaData:
@@ -27,6 +26,24 @@ class RegistraduriaScraper:
     def __init__(self, headless: bool = True):
         self.logger = self._setup_logger()
         self.headless = headless
+        self.verify_chrome_binary()
+        self.playwright = sync_playwright().start()
+        self.browser = self.playwright.chromium.launch(executable_path=CHROME_BINARY_PATH, headless=self.headless)
+        self.logger.info("Playwright browser launched successfully")
+
+    def verify_chrome_binary(self) -> None:
+        if not os.path.isfile(CHROME_BINARY_PATH):
+            fallback_path = os.path.join(os.getcwd(), "chrome", "chrome.exe")
+            if os.path.isfile(fallback_path):
+                global CHROME_BINARY_PATH
+                CHROME_BINARY_PATH = fallback_path
+            else:
+                self.logger.error(f"Chrome binary not found at {CHROME_BINARY_PATH}")
+                raise FileNotFoundError(f"Chrome binary not found at {CHROME_BINARY_PATH}")
+        
+        if not os.access(CHROME_BINARY_PATH, os.X_OK):
+            self.logger.error(f"Chrome binary not executable at {CHROME_BINARY_PATH}")
+            raise PermissionError(f"Chrome binary not executable at {CHROME_BINARY_PATH}")
 
     @staticmethod
     def _setup_logger() -> logging.Logger:
@@ -40,98 +57,43 @@ class RegistraduriaScraper:
             logger.addHandler(handler)
         return logger
 
-    def _parse_estado(self, content: str) -> str:
-        return "Vigente (Vivo)" if "vigente" in content.lower() else "Cancelada por Muerte"
-
-    def _get_fecha_actual(self) -> str:
-        return datetime.now().strftime("%d/%m/%Y")
-
-    @contextmanager
-    def _get_browser(self):
-        browser = None
-        with sync_playwright() as p:
-            try:
-                browser = p.chromium.launch(
-                    headless=self.headless, 
-                    args=[
-                        "--window-size=1280,720",
-                        "--disable-gpu",
-                        "--disable-dev-shm-usage",
-                        "--disable-extensions",
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-images",
-                        "--disable-plugins",
-                        "--mute-audio"
-                    ],
-                    slow_mo=50
-                )
-                context = browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                               "AppleWebKit/537.36 (KHTML, like Gecko) "
-                               "Chrome/98.0.4758.102 Safari/537.36"
-                )
-                page = context.new_page()
-                self.logger.info("Browser launched successfully")
-                yield page
-            except Exception as e:
-                self.logger.error(f"Error al iniciar el navegador: {e}")
-                self.logger.error(traceback.format_exc())
-                raise
-            finally:
-                if browser:
-                    browser.close()
-                    self.logger.info("Browser cerrado")
-
-    def scrape(self, nuip: str) -> Optional[RegistraduriaData]:
+    def scrape(self, documento: str) -> Optional[RegistraduriaData]:
         try:
-            with self._get_browser() as page:
-                page.goto(self.URL, timeout=600000, wait_until='networkidle')
-                self.logger.info(f"Navegando a {self.URL}")
+            page = self.browser.new_page()
+            self.logger.info(f"Navigating to {self.URL}")
+            page.goto(self.URL, timeout=60000)
+            self.logger.info("Page loaded successfully")
 
-                # Ingresar NUIP
-                try:
-                    page.click(self.INPUT_SELECTOR)
-                    page.fill(self.INPUT_SELECTOR, nuip)
-                    self.logger.info(f"NUIP ingresado: {nuip}")
-                except Exception as e:
-                    self.logger.error(f"Error al ingresar NUIP: {e}")
-                    return None
+            self.logger.debug("Filling in the documento field")
+            page.fill(self.INPUT_SELECTOR, documento)
 
-                # Clicar el botón de búsqueda
-                try:
-                    page.click(self.BUTTON_SELECTOR)
-                    self.logger.info("Botón de búsqueda clickeado.")
-                except Exception as e:
-                    self.logger.error(f"Error al clicar el botón de búsqueda: {e}")
-                    return None
+            self.logger.debug("Clicking the submit button")
+            page.click(self.BUTTON_SELECTOR)
 
-                # Esperar y extraer resultados
-                try:
-                    page.wait_for_selector(self.RESULTADOS_XPATH, timeout=10000, state='visible')
-                    content_element = page.query_selector(self.RESULTADOS_XPATH)
-                    content_text = content_element.inner_text().strip() if content_element else None
-                    self.logger.debug(f"Texto extraído: {content_text}")
+            self.logger.info("Waiting for resultados")
+            page.wait_for_selector(self.RESULTADOS_XPATH, timeout=30000)
 
-                    if content_text:
-                        return RegistraduriaData(
-                            documento=nuip,
-                            estado=self._parse_estado(content_text),
-                            fecha_consulta=self._get_fecha_actual(),
-                        )
-                    else:
-                        self.logger.warning("No se encontró información en los resultados.")
-                        return None
+            resultados = page.query_selector(self.RESULTADOS_XPATH)
+            if resultados:
+                estado = resultados.inner_text().strip()
+                fecha_consulta = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.logger.info(f"Scraped data: documento={documento}, estado={estado}, fecha_consulta={fecha_consulta}")
+                return RegistraduriaData(documento=documento, estado=estado, fecha_consulta=fecha_consulta)
+            else:
+                self.logger.warning("No resultados found")
+                return None
 
-                except PlaywrightTimeoutError:
-                    self.logger.warning("Selector de resultados no encontrado.")
-                    return None
-                except Exception as e:
-                    self.logger.error(f"Error al extraer información: {e}")
-                    self.logger.error(traceback.format_exc())
-                    return None
-
+        except PlaywrightTimeoutError as e:
+            self.logger.error(f"Timeout while scraping documento {documento}: {e}")
+            return None
         except Exception as e:
-            self.logger.error(f"Error general en el proceso de scraping: {e}")
+            self.logger.error(f"Unexpected error: {e}")
             self.logger.error(traceback.format_exc())
             return None
+        finally:
+            page.close()
+
+    def close(self):
+        self.browser.close()
+        self.playwright.stop()
+        self.logger.info("Browser closed")
