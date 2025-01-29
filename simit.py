@@ -4,21 +4,19 @@ from typing import Optional
 from dataclasses import dataclass
 from contextlib import contextmanager
 import traceback
-#funciona para ambos casos
+from datetime import datetime
+
 @dataclass
 class RegistraduriaData:
-    nuip: str
-    fecha_consulta: Optional[str] = None
-    documento: Optional[str] = None
-    estado: Optional[str] = None
+    documento: str
+    estado: str
+    fecha_consulta: str
 
 class RegistraduriaScraper:
-    URL = 'https://www.fcm.org.co/simit/#/home-public'
-    INPUT_SELECTOR = '#txtBusqueda'
-    BUTTON_SELECTOR = '#consultar'
-    BANNER_CLOSE_SELECTOR = '#modalInformation > div > div > div.modal-header > button > span'
-    RESULTADOS_XPATH = '//*[@id="mainView"]/div/div[1]/div/div[2]/div[2]/p[1]'
-    RESULTADOS_XPATH_ALTERNATIVE = '//*[@id="resumenEstadoCuenta"]/div/div'
+    URL = 'https://defunciones.registraduria.gov.co/'
+    INPUT_SELECTOR = '//*[@id="nuip"]'
+    BUTTON_SELECTOR = '//*[@id="content"]/div/div/div/div/div[2]/form/div/button'
+    RESULTADOS_XPATH = '//*[@id="content"]/div[2]/div/div/div/div'
 
     def __init__(self, headless: bool = True):
         self.logger = self._setup_logger()
@@ -35,6 +33,12 @@ class RegistraduriaScraper:
             )
             logger.addHandler(handler)
         return logger
+
+    def _parse_estado(self, content: str) -> str:
+        return "Vigente (Vivo)" if "vigente" in content.lower() else "Cancelada por Muerte"
+
+    def _get_fecha_actual(self) -> str:
+        return datetime.now().strftime("%d/%m/%Y")
 
     @contextmanager
     def _get_browser(self):
@@ -67,60 +71,43 @@ class RegistraduriaScraper:
                 page.goto(self.URL)
                 self.logger.info(f"Navegando a {self.URL}")
 
-                # Cerrar banner si está presente
-                try:
-                    page.wait_for_selector(self.BANNER_CLOSE_SELECTOR, timeout=5000, state='visible')
-                    page.click(self.BANNER_CLOSE_SELECTOR)
-                    self.logger.info("Banner cerrado.")
-                except PlaywrightTimeoutError:
-                    self.logger.info("No se encontró el banner o ya está cerrado.")
-                except Exception as e:
-                    self.logger.error(f"Error al cerrar el banner: {e}")
-
                 # Ingresar NUIP
                 try:
+                    page.click(self.INPUT_SELECTOR)
                     page.fill(self.INPUT_SELECTOR, nuip)
                     self.logger.info(f"NUIP ingresado: {nuip}")
+                except Exception as e:
+                    self.logger.error(f"Error al ingresar NUIP: {e}")
+                    return None
+
+                # Clicar el botón de búsqueda
+                try:
                     page.click(self.BUTTON_SELECTOR)
                     self.logger.info("Botón de búsqueda clickeado.")
                 except Exception as e:
-                    self.logger.error(f"Error al ingresar NUIP o clicar el botón: {e}")
+                    self.logger.error(f"Error al clicar el botón de búsqueda: {e}")
                     return None
 
-                # Esperar y extraer resultados usando ambos XPath
+                # Esperar y extraer resultados
                 try:
-                    # Intentar con el primer XPath
-                    try:
-                        page.wait_for_selector(f'xpath={self.RESULTADOS_XPATH}', timeout=10000, state='visible')
-                        estado_element = page.query_selector(f'xpath={self.RESULTADOS_XPATH}')
-                        estado_text = estado_element.inner_text().strip() if estado_element else None
-                        self.logger.debug(f"Texto extraído del XPath principal: {estado_text}")
-                        
-                        if estado_text:
-                            return RegistraduriaData(nuip=nuip, estado=estado_text)
-                            
-                    except PlaywrightTimeoutError:
-                        self.logger.warning("XPath principal no encontrado, intentando alternativo")
-                        estado_text = None
+                    page.wait_for_selector(self.RESULTADOS_XPATH, timeout=10000, state='visible')
+                    content_element = page.query_selector(self.RESULTADOS_XPATH)
+                    content_text = content_element.inner_text().strip() if content_element else None
+                    self.logger.debug(f"Texto extraído: {content_text}")
 
-                    # Si no se encontró en el primer XPath, intentar con el alternativo
-                    try:
-                        page.wait_for_selector(f'xpath={self.RESULTADOS_XPATH_ALTERNATIVE}', timeout=10000, state='visible')
-                        alt_element = page.query_selector(f'xpath={self.RESULTADOS_XPATH_ALTERNATIVE}')
-                        estado_text = alt_element.inner_text().strip() if alt_element else None
-                        self.logger.debug(f"Texto extraído del XPath alternativo: {estado_text}")
-                        
-                        if estado_text:
-                            return RegistraduriaData(nuip=nuip, estado=estado_text)
-                            
-                    except PlaywrightTimeoutError:
-                        self.logger.warning("XPath alternativo no encontrado")
-                        estado_text = None
-
-                    if not estado_text:
-                        self.logger.warning("No se encontró información en ningún XPath")
+                    if content_text:
+                        return RegistraduriaData(
+                            documento=nuip,
+                            estado=self._parse_estado(content_text),
+                            fecha_consulta=self._get_fecha_actual(),
+                        )
+                    else:
+                        self.logger.warning("No se encontró información en los resultados.")
                         return None
 
+                except PlaywrightTimeoutError:
+                    self.logger.warning("Selector de resultados no encontrado.")
+                    return None
                 except Exception as e:
                     self.logger.error(f"Error al extraer información: {e}")
                     self.logger.error(traceback.format_exc())
