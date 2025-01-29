@@ -1,10 +1,4 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-from selenium.common.exceptions import (
-    WebDriverException,
-    NoSuchElementException,
-    ElementClickInterceptedException,
-    TimeoutException,
-)
 import logging
 import os
 from typing import List, Optional
@@ -55,7 +49,7 @@ class RegistraduriaScraper:
             logger.setLevel(logging.INFO)
             handler = logging.StreamHandler()
             handler.setFormatter(
-                logging.Formatter('%(asctime)s - %(levellevel)s - %(message)s')
+                logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
             )
             logger.addHandler(handler)
         return logger
