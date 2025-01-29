@@ -1,32 +1,38 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from selenium.common.exceptions import (
+    WebDriverException,
+    NoSuchElementException,
+    ElementClickInterceptedException,
+    TimeoutException,
+)
 import logging
-from typing import Optional
+import os
+from typing import List, Optional
 from dataclasses import dataclass
 from contextlib import contextmanager
 import traceback
-from datetime import datetime
-import os
 
 # Constants for Chrome setup
 DEFAULT_CHROME_PATH = "/opt/render/project/.chrome/chrome-linux64/chrome-linux64/chrome"
 CHROME_BINARY_PATH = os.getenv('CHROME_BINARY', DEFAULT_CHROME_PATH)
 
+
 @dataclass
 class RegistraduriaData:
-    documento: str
-    estado: str
-    fecha_consulta: str
+    nuip: str
+    fecha_consulta: Optional[str] = None
+    documento: Optional[str] = None  
+    estado: Optional[str] = None
 
 class RegistraduriaScraper:
-    URL = 'https://defunciones.registraduria.gov.co/'
-    INPUT_SELECTOR = '//*[@id="nuip"]'
-    BUTTON_SELECTOR = '//*[@id="content"]/div/div/div/div/div[2]/form/div/button'
-    RESULTADOS_XPATH = '//*[@id="content"]/div[2]/div/div/div/div'
+    URL = "https://defunciones.registraduria.gov.co/"
+    INPUT_SELECTOR = "input[name='nuip']"
+    BUTTON_SELECTOR = "button[type='submit']"
 
     def __init__(self, headless: bool = True):
         self.logger = self._setup_logger()
-        self.headless = headless
         self.verify_chrome_binary()
+        self.headless = headless
 
     def verify_chrome_binary(self) -> None:
         global CHROME_BINARY_PATH
@@ -46,54 +52,105 @@ class RegistraduriaScraper:
     def _setup_logger() -> logging.Logger:
         logger = logging.getLogger('registraduria_scraper')
         if not logger.handlers:
-            logger.setLevel(logging.DEBUG)
+            logger.setLevel(logging.INFO)
             handler = logging.StreamHandler()
             handler.setFormatter(
-                logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+                logging.Formatter('%(asctime)s - %(levellevel)s - %(message)s')
             )
             logger.addHandler(handler)
         return logger
 
-    def scrape(self, documento: str) -> Optional[RegistraduriaData]:
-        try:
-            with sync_playwright() as p:
-                with p.chromium.launch(
-                    executable_path=CHROME_BINARY_PATH,
+    @contextmanager
+    def _get_browser(self):
+        with sync_playwright() as p:
+            try:
+                browser = p.chromium.launch(
                     headless=self.headless,
-                    args=["--disable-dev-shm-usage", "--no-sandbox", "--disable-setuid-sandbox"]
-                ) as browser:
-                    self.logger.info("Playwright browser launched successfully")
-                    with browser.new_page() as page:
-                        self.logger.info(f"Navigating to {self.URL}")
-                        page.goto(self.URL, timeout=60000)
-                        self.logger.info("Page loaded successfully")
+                    executable_path=CHROME_BINARY_PATH,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--disable-extensions',
+                        '--disable-software-rasterizer'
+                    ],
+                )
+                context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                                       "Chrome/131.0.6778.108 Safari/537.36")
+                page = context.new_page()
+                self.logger.info("Playwright browser started successfully")
+                yield page
+            except Exception as e:
+                self.logger.error(f"Failed to start Playwright browser: {e}")
+                raise
+            finally:
+                browser.close()
+                self.logger.info("Browser closed")
 
-                        self.logger.debug("Filling in the documento field")
-                        page.fill(self.INPUT_SELECTOR, documento)
+    def scrape(self, nuip: str) -> Optional[RegistraduriaData]:
+        try:
+            with self._get_browser() as page:
+                page.goto(self.URL)
+                self.logger.info(f"Navigating to {self.URL}")
 
-                        self.logger.debug("Clicking the submit button")
-                        page.click(self.BUTTON_SELECTOR)
+                try:
+                    page.fill(self.INPUT_SELECTOR, nuip)
+                    self.logger.info(f"NUIP entered: {nuip}")
+                    page.click(self.BUTTON_SELECTOR)
+                    self.logger.info("Search button clicked")
+                except PlaywrightTimeoutError:
+                    self.logger.error("NUIP field not found within timeout")
+                    return None
+                except Exception as e:
+                    self.logger.error(f"Error entering NUIP or clicking button: {e}")
+                    self.logger.error(traceback.format_exc())
+                    return None
 
-                        self.logger.info("Waiting for resultados")
-                        page.wait_for_selector(self.RESULTADOS_XPATH, timeout=30000)
+                try:
+                    results_selector = '//*[@id="content"]/div[2]/div/div/div/div'
+                    page.wait_for_selector(results_selector, timeout=10000)
+                    result_element = page.query_selector(results_selector)
+                    
+                    # Get consultation date
+                    try:
+                        fecha_consulta = result_element.query_selector('.card-title').inner_text().replace('Fecha Consulta: ', '').strip()
+                    except AttributeError:
+                        fecha_consulta = None
+                        self.logger.error("Consultation date element not found")
+                    
+                    # Get document number
+                    try:
+                        documento = result_element.query_selector_all('.lead > span > strong')[0].inner_text()
+                    except (AttributeError, IndexError):
+                        documento = None
+                        self.logger.error("Document number element not found")
+                    
+                    # Get status
+                    try:
+                        estado = result_element.query_selector_all('.lead > span > strong')[1].inner_text()
+                    except (AttributeError, IndexError):
+                        estado = None
+                        self.logger.error("Status element not found")
 
-                        resultados = page.query_selector(self.RESULTADOS_XPATH)
-                        if resultados:
-                            estado = resultados.inner_text().strip()
-                            fecha_consulta = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            self.logger.info(f"Scraped data: documento={documento}, estado={estado}, fecha_consulta={fecha_consulta}")
-                            return RegistraduriaData(documento=documento, estado=estado, fecha_consulta=fecha_consulta)
-                        else:
-                            self.logger.warning("No resultados found")
-                            return None
-
-        except PlaywrightTimeoutError as e:
-            self.logger.error(f"Timeout while scraping documento {documento}: {e}")
-            return None
+                    data = RegistraduriaData(
+                        nuip=nuip,
+                        fecha_consulta=fecha_consulta,
+                        documento=documento,
+                        estado=estado
+                    )
+                    self.logger.info(f"Data extracted: {data}")
+                    return data
+                        
+                except PlaywrightTimeoutError:
+                    self.logger.error("Results not found within timeout")
+                    return None
+                except Exception as e:
+                    self.logger.error(f"Error extracting data: {e}")
+                    self.logger.error(traceback.format_exc())
+                    return None
+                        
         except Exception as e:
-            self.logger.error(f"Unexpected error: {e}")
+            self.logger.error(f"Error during scraping: {e}")
             self.logger.error(traceback.format_exc())
             return None
-
-    def close(self):
-        pass
