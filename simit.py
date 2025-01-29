@@ -28,9 +28,6 @@ class RegistraduriaScraper:
         self.logger = self._setup_logger()
         self.headless = headless
         self.verify_chrome_binary()
-        self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(executable_path=CHROME_BINARY_PATH, headless=self.headless)
-        self.logger.info("Playwright browser launched successfully")
 
     def verify_chrome_binary(self) -> None:
         global CHROME_BINARY_PATH
@@ -60,29 +57,32 @@ class RegistraduriaScraper:
 
     def scrape(self, documento: str) -> Optional[RegistraduriaData]:
         try:
-            page = self.browser.new_page()
-            self.logger.info(f"Navigating to {self.URL}")
-            page.goto(self.URL, timeout=60000)
-            self.logger.info("Page loaded successfully")
+            with sync_playwright() as p:
+                browser = p.chromium.launch(executable_path=CHROME_BINARY_PATH, headless=self.headless)
+                self.logger.info("Playwright browser launched successfully")
+                page = browser.new_page()
+                self.logger.info(f"Navigating to {self.URL}")
+                page.goto(self.URL, timeout=60000)
+                self.logger.info("Page loaded successfully")
 
-            self.logger.debug("Filling in the documento field")
-            page.fill(self.INPUT_SELECTOR, documento)
+                self.logger.debug("Filling in the documento field")
+                page.fill(self.INPUT_SELECTOR, documento)
 
-            self.logger.debug("Clicking the submit button")
-            page.click(self.BUTTON_SELECTOR)
+                self.logger.debug("Clicking the submit button")
+                page.click(self.BUTTON_SELECTOR)
 
-            self.logger.info("Waiting for resultados")
-            page.wait_for_selector(self.RESULTADOS_XPATH, timeout=30000)
+                self.logger.info("Waiting for resultados")
+                page.wait_for_selector(self.RESULTADOS_XPATH, timeout=30000)
 
-            resultados = page.query_selector(self.RESULTADOS_XPATH)
-            if resultados:
-                estado = resultados.inner_text().strip()
-                fecha_consulta = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                self.logger.info(f"Scraped data: documento={documento}, estado={estado}, fecha_consulta={fecha_consulta}")
-                return RegistraduriaData(documento=documento, estado=estado, fecha_consulta=fecha_consulta)
-            else:
-                self.logger.warning("No resultados found")
-                return None
+                resultados = page.query_selector(self.RESULTADOS_XPATH)
+                if resultados:
+                    estado = resultados.inner_text().strip()
+                    fecha_consulta = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    self.logger.info(f"Scraped data: documento={documento}, estado={estado}, fecha_consulta={fecha_consulta}")
+                    return RegistraduriaData(documento=documento, estado=estado, fecha_consulta=fecha_consulta)
+                else:
+                    self.logger.warning("No resultados found")
+                    return None
 
         except PlaywrightTimeoutError as e:
             self.logger.error(f"Timeout while scraping documento {documento}: {e}")
@@ -92,8 +92,10 @@ class RegistraduriaScraper:
             self.logger.error(traceback.format_exc())
             return None
         finally:
-            page.close()
+            if 'page' in locals():
+                page.close()
+            if 'browser' in locals():
+                browser.close()
 
     def close(self):
-        self.browser.close()
-        self.playwright.stop()
+        pass  # No action needed since browser is managed within the scrape method
