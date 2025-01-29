@@ -95,10 +95,7 @@ class RegistraduriaScraper:
             self.logger.error(traceback.format_exc())
             return None
         finally:
-            if 'page' in locals():
-                page.close()
-            if 'browser' in locals():
-                browser.close()
+            pass
 
     def close(self):
         pass
